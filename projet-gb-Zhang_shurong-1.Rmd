@@ -1,0 +1,382 @@
+---
+title: "projet-gb-Liao-Zhang"
+author: "zhang"
+date: "4/21/2022"
+output: html_document
+---
+
+
+```{r}
+library(dplyr)
+library(bnlearn)# algo
+
+library(mlbench)
+library(e1071)
+library(caTools)
+library(caret)
+library(bnlearn)
+library(bnclassify)
+library(tidyverse)
+library(mvtnorm)
+library(matrixStats)
+```
+
+
+Data set "iris":
+```{r}
+data('iris')
+
+```
+
+
+Classifier Naive Bayes:
+```{r}
+ClassifierNaiveBayes_Iris<-function(train,test){
+  nb_var=dim(train)[2]-1      
+  
+  mu_setosa=rep(0,nb_var)
+  sigma_setosa=rep(0,nb_var)
+  
+  mu_ver=rep(0,nb_var)
+  sigma_ver=rep(0,nb_var)
+  
+  mu_vir=rep(0,nb_var)
+  sigma_vir=rep(0,nb_var)
+  
+  for (i in 1:nb_var) {
+    mu_setosa[i]=mean(train[which(train$Species=="setosa"),i])
+    mu_ver[i]=mean(train[which(train$Species=="versicolor"),i])
+    mu_vir[i]=mean(train[which(train$Species=="virginica"),i])
+    
+    sigma_setosa[i]=var(train[which(train$Species=="setosa"),i])
+    sigma_ver[i]=var(train[which(train$Species=="versicolor"),i])
+    sigma_vir[i]=var(train[which(train$Species=="virginica"),i])
+  }
+  p1=1
+  p2=1
+  p3=1
+  
+  for (i in 1:nb_var) {
+    p1=p1*dnorm(as.numeric(test[i]),mean=mu_setosa[i],sd=sqrt(sigma_setosa[i]))
+    p2=p2*dnorm(as.numeric(test[i]),mean=mu_ver[i],sd=sqrt(sigma_ver[i]))
+    p3=p3*dnorm(as.numeric(test[i]),mean=mu_vir[i],sd=sqrt(sigma_vir[i]))
+  }
+  
+  
+  p1=p1*(length(which(train$Species=="setosa"))/dim(train)[1])
+  p2=p2*(length(which(train$Species=="versicolor"))/dim(train)[1])
+  p3=p3*(length(which(train$Species=="virginica"))/dim(train)[1])
+  
+  p=c(p1,p2,p3)
+  species=c("setosa","versicolor","virginica")
+  return(species[which(p==max(p))])
+}
+```
+
+
+Validation Croisée: 
+```{r}
+#Validation croisée K-fold K=10
+require(caret)
+class=iris[,5]
+folds <- createFolds(y=class,k=10)
+
+
+for(i in 1:10){
+  res=0
+  cpt=0
+  for (j in 1:length(folds[[i]])) {
+    if(ClassifierNaiveBayes_Iris(iris[-folds[[i]],],iris[folds[[i]][j],])==iris[folds[[i]][j],5]){
+      res=res+1
+    }
+    cpt=cpt+1
+  }
+  
+  cat("le nombre de classification correct est:",res,"/",cpt,"\n")
+  
+}
+
+```
+
+
+Tree augmented Naive Bayes:
+```{r}
+setosa <- iris[iris$Species=="setosa",] %>% select(-Species)
+virginica <- iris[iris$Species=="virginica",] %>% select(-Species)
+versicolor <- iris[iris$Species=="versicolor",] %>% select(-Species)
+
+#Graphe non dirigé pour chaque species
+plot(chow.liu(setosa),main="setosa")
+plot(chow.liu(versicolor),main="versicolor")
+plot(chow.liu(virginica),main="virginica")
+
+#Initialisation de mat adj
+Mat_adj_setosa=matrix(data = rep(0,16),nrow = 4,ncol = 4)
+Mat_adj_virginica=matrix(data = rep(0,16),nrow = 4,ncol = 4)
+Mat_adj_versicolor=matrix(data = rep(0,16),nrow = 4,ncol = 4)
+
+#On remplace matrice d'après le graphe non dirigé
+
+Mat_adj_setosa[1,3] <- 1
+Mat_adj_setosa[3,4] <- 1
+Mat_adj_setosa[1,2] <- 1
+
+
+Mat_adj_versicolor[1,3] <- 1
+Mat_adj_versicolor[3,4] <- 1
+Mat_adj_versicolor[4,2] <- 1
+
+
+Mat_adj_virginica[1,2] <- 1
+Mat_adj_virginica[1,3] <- 1
+Mat_adj_virginica[2,4] <- 1
+
+```
+
+```{r}
+TAN_iris<-function(train,test){
+  nb_var=dim(train)[2]-1
+  
+  
+  p1=1
+  p2=1
+  p3=1
+  
+  train_1=train[which(train$Species=="setosa"),]
+  train_2=train[which(train$Species=="versicolor"),]
+  train_3=train[which(train$Species=="virginica"),]
+  
+  for (i in 1:nb_var) {
+    p1_1=1
+    for (j in (which(Mat_adj_setosa[i,]==1))) {
+      p1_1=p1_1*((length(which(train_1[,i]==test[,i]&&train_1[,j]==test[,j]))+1)/(length(which(train_1[,i]==test[,i]))+length(unique(train_1[,j]))))
+      
+    }
+    p1=p1+p1_1*(length(which(train_1[,i]==test[,i]))+1)/(length(train_1[,1])+length(unique(train_1[,i])))
+    
+  }
+  
+  for (i in 1:nb_var) {
+    p2_1=1
+    for (j in (which(Mat_adj_versicolor[i,]==1))) {
+      p2_1=p2_1*((length(which(train_2[,i]==test[,i]&&train_2[,j]==test[,j]))+1)/(length(which(train_2[,i]==test[,i]))+length(unique(train_2[,j]))))
+      
+    }
+    p2=p2+p2_1*(length(which(train_2[,i]==test[,i]))+1)/(length(train_2[,1])+length(unique(train_2[,i])))
+    
+  }
+  
+  for (i in 1:nb_var) {
+    p3_1=1
+    for (j in (which(Mat_adj_virginica[i,]==1))) {
+      p3_1=p3_1*((length(which(train_3[,i]==test[,i]&&train_3[,j]==test[,j]))+1)/(length(which(train_3[,i]==test[,i]))+length(unique(train_3[,j]))))
+      
+    }
+    p3=p3+p3_1*(length(which(train_3[,i]==test[,i]))+1)/(length(train_3[,1])+length(unique(train_3[,i])))
+    
+  }
+  
+  p=c(p1,p2,p3)
+  species=c("setosa","versicolor","virginica")
+  return(species[which(p==max(p))])
+}
+
+```
+
+
+```{r}
+require(caret)
+class=iris[,5]
+folds <- createFolds(y=class,k=10)
+
+
+for(i in 1:10){
+  res=0
+  cpt=0
+  for (j in 1:length(folds[[i]])) {
+    if(TAN_iris(iris[-folds[[i]],],iris[folds[[i]][j],])==iris[folds[[i]][j],5]){
+      res=res+1
+    }
+    cpt=cpt+1
+  }
+  
+  cat("le nombre de classification correct est:",res,"/",cpt,"\n")
+  
+}
+
+```
+
+
+Data set Pima:
+```{r}
+library(mlbench)
+data(PimaIndiansDiabetes)
+```
+
+
+Naive Bayes:
+```{r}
+ClassifierNaiveBayes_Pima<-function(train,test){
+  nb_var=dim(train)[2]-1
+  
+  mu_pos=rep(0,nb_var)
+  sigma_pos=rep(0,nb_var)
+  
+  mu_neg=rep(0,nb_var)
+  sigma_neg=rep(0,nb_var)
+  
+  
+  for (i in 1:nb_var) {
+    mu_pos[i]=mean(train[which(train$diabetes=="pos"),i])
+    mu_neg[i]=mean(train[which(train$diabetes=="neg"),i])
+    
+    sigma_pos[i]=var(train[which(train$diabetes=="pos"),i])
+    sigma_neg[i]=var(train[which(train$diabetes=="neg"),i])
+    
+  }
+  p1=1
+  p2=1
+  
+  
+  for (i in 1:nb_var) {
+    p1=p1*dnorm(as.numeric(test[i]),mean=mu_pos[i],sd=sqrt(sigma_pos[i]))
+    p2=p2*dnorm(as.numeric(test[i]),mean=mu_neg[i],sd=sqrt(sigma_neg[i]))
+    
+  }
+  
+  
+  p1=p1*(length(which(train$diabetes=="pos"))/dim(train)[1])
+  p2=p2*(length(which(train$diabetes=="neg"))/dim(train)[1])
+  
+  
+  p=c(p1,p2)
+  species=c("pos","neg")
+  return(species[which(p==max(p))])
+}
+```
+
+Validation croisée:
+```{r}
+#Validation croisée K-fold K=10
+require(caret)
+class=PimaIndiansDiabetes[,9]
+folds <- createFolds(y=class,k=10)
+
+
+for(i in 1:10){
+  res=0
+  cpt=0
+  for (j in 1:length(folds[[i]])) {
+    if(ClassifierNaiveBayes_Pima(PimaIndiansDiabetes[-folds[[i]],],PimaIndiansDiabetes[folds[[i]][j],])==PimaIndiansDiabetes[folds[[i]][j],9]){
+      res=res+1
+    }
+    cpt=cpt+1
+  }
+  
+  cat("le nombre de classification correct est:",res,"/",cpt,"\n")
+  
+}
+
+```
+
+
+Tree augmented Naive Bayes:
+```{r}
+pos <- PimaIndiansDiabetes[PimaIndiansDiabetes$diabetes=="pos",] %>% select(-diabetes)
+neg <- PimaIndiansDiabetes[PimaIndiansDiabetes$diabetes=="neg",] %>% select(-diabetes)
+
+#Graphe non dirigé pour chaque species
+plot(chow.liu(pos),main="pos")
+plot(chow.liu(neg),main="neg")
+
+
+#Initialisation de mat adj
+Mat_adj_pos=matrix(data = 0,nrow = 8,ncol = 8)
+Mat_adj_neg=matrix(data = 0,nrow = 8,ncol = 8)
+
+
+#On remplace matrice d'après le graphe non dirigé
+Mat_adj_pos[1,8]=1
+Mat_adj_pos[8,3]=1
+Mat_adj_pos[3,4]=1
+Mat_adj_pos[4,7]=1
+Mat_adj_pos[4,6]=1
+Mat_adj_pos[4,5]=1
+Mat_adj_pos[5,2]=1
+
+Mat_adj_neg[1,8]=1
+Mat_adj_neg[8,2]=1
+Mat_adj_neg[2,5]=1
+Mat_adj_neg[5,7]=1
+Mat_adj_neg[5,4]=1
+Mat_adj_neg[4,6]=1
+Mat_adj_neg[6,3]=1
+```
+
+```{r}
+TAN_pima<-function(train,test){
+  nb_var=dim(train)[2]-1
+  
+  
+  p1=1
+  p2=1
+
+  
+  train_1=train[which(train$diabetes=="pos"),]
+  train_2=train[which(train$diabetes=="neg"),]
+  
+  for (i in 1:nb_var) {
+    p1_1=1
+    for (j in (which(Mat_adj_pos[i,]==1))) {
+      p1_1=p1_1*((length(which(train_1[,i]==test[,i]&&train_1[,j]==test[,j]))+1)/(length(which(train_1[,i]==test[,i]))+length(unique(train_1[,j]))))
+      
+    }
+    p1=p1+p1_1*(length(which(train_1[,i]==test[,i]))+1)/(length(train_1[,1])+length(unique(train_1[,i])))
+    
+  }
+  
+  for (i in 1:nb_var) {
+    p2_1=1
+    for (j in (which(Mat_adj_neg[i,]==1))) {
+      p2_1=p2_1*((length(which(train_2[,i]==test[,i]&&train_2[,j]==test[,j]))+1)/(length(which(train_2[,i]==test[,i]))+length(unique(train_2[,j]))))
+      
+    }
+    p2=p2+p2_1*(length(which(train_2[,i]==test[,i]))+1)/(length(train_2[,1])+length(unique(train_2[,i])))
+    
+  }
+  
+
+  
+  p=c(p1,p2)
+  species=c("pos","neg")
+  return(species[which(p==max(p))])
+}
+
+```
+
+
+
+Validation Croisée:
+```{r}
+
+require(caret)
+class=PimaIndiansDiabetes[,9]
+folds <- createFolds(y=class,k=10)
+
+
+for(i in 1:10){
+  res=0
+  cpt=0
+  for (j in 1:length(folds[[i]])) {
+    if(TAN_pima(PimaIndiansDiabetes[-folds[[i]],],PimaIndiansDiabetes[folds[[i]][j],])==PimaIndiansDiabetes[folds[[i]][j],9]){
+      res=res+1
+    }
+    cpt=cpt+1
+  }
+  
+  cat("le nombre de classification correct est:",res,"/",cpt,"\n")
+  
+}
+
+```
+
